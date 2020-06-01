@@ -42,7 +42,7 @@ def get_errors(filesystems):
     devices = {}
     for data in filesystems.values():
         for device in data["devices"].values():
-            path = device["path"] 
+            path = device["path"]
             for line in subprocess.run(["btrfs", "device", "stats", path], check=True, capture_output=True,
                                        text=True).stdout.splitlines():
                 match = re.match(r"\[(?P<device>.+)\]\..+_errs\s+(?P<errors>\d+)", line)
@@ -54,7 +54,7 @@ def get_scrub_results(filesystems):
     devices = {}
     for data in filesystems.values():
         for device in data["devices"].values():
-            path = device["path"] 
+            path = device["path"]
             output =  subprocess.run(["btrfs", "scrub", "start", "-B", path], check=True, capture_output=True,
                                      text=True).stdout
             match = re.match(r"""scrub device (?P<path>.+) \(id (?P<devid>\d+)\) done
