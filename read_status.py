@@ -42,9 +42,10 @@ def get_errors(filesystems):
     devices = {}
     for data in filesystems.values():
         for device in data["devices"].values():
-            for line in subprocess.run(["btrfs", "device", "stats", device["path"]], check=True, capture_output=True,
+            path = device["path"] 
+            for line in subprocess.run(["btrfs", "device", "stats", path], check=True, capture_output=True,
                                        text=True).stdout.splitlines():
                 match = re.match(r"\[(?P<device>.+)\]\..+_errs\s+(?P<errors>\d+)", line)
-                device_ = match.group("device")
-                devices[device_] = devices.get(device_, 0) + int(match.group("errors"))
+                devices[path] = devices.get(path, 0) + int(match.group("errors"))
+    return devices
     return devices
