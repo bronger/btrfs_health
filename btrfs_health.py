@@ -95,7 +95,7 @@ def cancel_ongoing_scrubs():
         logging.info(f"canceled")
 
 def get_scrub_results(filesystems):
-    """Returns filesystem errors detected by “btrfs device stats”.  This call is
+    """Returns filesystem errors detected by “btrfs scrub start”.  This call is
     expensive (scrubbing of all devices).
 
     :param filesystems: the filesystems to be checked, as returned by
