@@ -85,6 +85,8 @@ def get_errors(filesystems):
     return devices
 
 
+scrub_processes = set()
+
 def get_scrub_results(filesystems):
     """Returns filesystem errors detected by “btrfs device stats”.  This call is
     expensive (scrubbing of all devices).
@@ -106,8 +108,10 @@ def get_scrub_results(filesystems):
     for uuid, data in filesystems.items():
         for device in data["devices"].values():
             path = device["path"]
-            output =  subprocess.run(["btrfs", "scrub", "start", "-B", path], check=True, capture_output=True,
-                                     text=True).stdout
+            btrfs_process = subprocess.Popen(["btrfs", "scrub", "start", "-B", path], stdout=subprocess.PIPE, text=True)
+            scrub_processes.add(btrfs_process)
+            output = btrfs_process.communicate()[0]
+            assert btrfs_process.returncode == 0, btrfs_process.returncode
             match = re.match(r"""scrub done for (?P<uuid>.+)
 Scrub started:\s* (?P<timestamp>.+)
 Status:\s* finished
