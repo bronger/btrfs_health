@@ -104,20 +104,21 @@ def get_scrub_results(filesystems):
     :rtype: dict[str, dict[str, str]]
     """
     devices = {}
-    for data in filesystems.values():
+    for uuid, data in filesystems.items():
         for device in data["devices"].values():
             path = device["path"]
             output =  subprocess.run(["btrfs", "scrub", "start", "-B", path], check=True, capture_output=True,
                                      text=True).stdout
-            match = re.match(r"""scrub device (?P<path>.+) \(id (?P<devid>\d+)\) done
+            match = re.match(r"""scrub done for (?P<uuid>.+)
 Scrub started:\s* (?P<timestamp>.+)
 Status:\s* finished
 Duration:\s* (?P<duration>.+)
 Total to scrub:\s* (?P<total_to_scrub>.+)
 Rate:\s* (?P<rate>.+)
 Error summary:\s* no errors found
-""", output, re.MULTILINE)
+$""", output, re.MULTILINE)
             if match:
+                assert match.group("uuid") == uuid
                 devices[path] = {"timestamp": match.group("timestamp"),
                                  "duration": match.group("duration"),
                                  "total_to_scrub": match.group("total_to_scrub"),
