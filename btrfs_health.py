@@ -7,7 +7,7 @@ is unstable in ordering, unstable in device naming, complex to parse, and not
 accompanied by proper exit codes.
 """
 
-import re, subprocess
+import re, subprocess, logging
 
 
 def get_filesystems():
@@ -108,9 +108,12 @@ def get_scrub_results(filesystems):
     for uuid, data in filesystems.items():
         for device in data["devices"].values():
             path = device["path"]
+            logging.debug("Launch scrub process")
             btrfs_process = subprocess.Popen(["btrfs", "scrub", "start", "-B", path], stdout=subprocess.PIPE, text=True)
             scrub_processes.add(btrfs_process)
+            logging.debug("Waiting for scrub process to finish …")
             output = btrfs_process.communicate()[0]
+            logging.debug("… scrub process finished")
             assert btrfs_process.returncode == 0, btrfs_process.returncode
             match = re.match(r"""scrub done for (?P<uuid>.+)
 Scrub started:\s* (?P<timestamp>.+)
