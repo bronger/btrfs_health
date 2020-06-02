@@ -85,7 +85,14 @@ def get_errors(filesystems):
     return devices
 
 
-scrub_processes = set()
+ongoing_scrubs = set()
+
+def cancel_ongoing_scrubs():
+    while ongoing_scrubs:
+        path = ongoing_scrubs.pop()
+        logging.info(f"Cancel scrub on {path} …")
+        subprocess.run(["btrfs", "scrub", "cancel", path], check=True, stdout=subprocess.DEVNULL)
+        logging.info(f"canceled")
 
 def get_scrub_results(filesystems):
     """Returns filesystem errors detected by “btrfs device stats”.  This call is
@@ -110,9 +117,12 @@ def get_scrub_results(filesystems):
             path = device["path"]
             logging.debug("Launch scrub process")
             btrfs_process = subprocess.Popen(["btrfs", "scrub", "start", "-B", path], stdout=subprocess.PIPE, text=True)
-            scrub_processes.add(btrfs_process)
+            ongoing_scrubs.add(path)
             logging.debug("Waiting for scrub process to finish …")
             output = btrfs_process.communicate()[0]
+            if path not in ongoing_scrubs:
+                # scrub was canceled
+                continue
             logging.debug("… scrub process finished")
             assert btrfs_process.returncode == 0, btrfs_process.returncode
             match = re.match(r"""scrub done for (?P<uuid>.+)
