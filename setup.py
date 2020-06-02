@@ -1,5 +1,5 @@
 #!/usr/bin/python3
 
-from distutils.core import setup
+from setuptools import setup, find_packages
 
-setup(name="btrfs_health", modules=["btrfs_health"])
+setup(name="btrfs_health", packages=find_packages())
