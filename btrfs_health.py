@@ -7,7 +7,6 @@ is unstable in ordering, unstable in device naming, complex to parse, and not
 accompanied by proper exit codes.
 """
 
-
 import re, subprocess
 
 
