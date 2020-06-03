@@ -204,7 +204,8 @@ def cancel_scrubs(uuids):
     """
     for mount_point in (ids[2] for ids in mounted_filesystem_ids() if ids[0] in uuids):
         logging.debug(f"Cancel scrub for {mount_point}")
-        process = subprocess.run(["btrfs", "scrub", "cancel", mount_point])
+        process = subprocess.run(["btrfs", "scrub", "cancel", mount_point],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         assert process.returncode in [0, 2], process.returncode
     uncanceled_scrub = True
     while uncanceled_scrub:
