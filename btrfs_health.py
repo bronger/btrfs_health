@@ -191,6 +191,7 @@ def scrub(uuids):
                             unfinished_scrub = True
                         assert device["canceled"] != "1"
             if not unfinished_scrub:
+                logging.debug(f"All scrubs finished")
                 return results
     except BaseException:
         cancel_scrubs(uuids)
