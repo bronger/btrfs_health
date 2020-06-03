@@ -7,12 +7,12 @@ is unstable in ordering, unstable in device naming, complex to parse, and not
 accompanied by proper exit codes.
 """
 
-import re, subprocess, logging
+import re, subprocess, logging, time
+from pathlib import Path
 
 
 def get_filesystems():
-    """Returns the “present filesystems” as btrfs calls them.  I suspect, *mounted*
-    filesystems are meant.
+    """Returns the mounted btrfs filesystems.
 
     :returns:
       All mounted btrfs filesystems, as a dictionary mapping the UUID to
@@ -25,7 +25,7 @@ def get_filesystems():
 
     :rtype: dict[str, dict[str, object]]
     """
-    btrfs = subprocess.run(["btrfs", "fi", "show"], check=True, capture_output=True, text=True)
+    btrfs = subprocess.run(["btrfs", "fi", "show", "--mounted"], check=True, capture_output=True, text=True)
     assert not btrfs.stderr, btrfs.stderr
     lines = iter(btrfs.stdout.splitlines())
 
@@ -42,9 +42,9 @@ def get_filesystems():
         devices = {}
 
         while line := next(lines):
-            match = re.match("\tdevid\\s* (?P<devid>\\d+) size (?P<size>.+) used (?P<used>.+) path (?P<path>.*)", line)
+            match = re.match("\tdevid\\s* (?P<devid>\\d+) size (?P<size>.+) used (?P<used>.+) path (?P<device_path>.*)", line)
             devices[match.group("devid")] = {"size": match.group("size"), "used": match.group("used"),
-                                             "path": match.group("path")}
+                                             "path": match.group("device_path")}
         data["devices"] = devices
 
         return uuid, data
@@ -59,6 +59,39 @@ def get_filesystems():
     return filesystems
 
 
+def mounted_filesystem_ids():
+    """Returns equivalent IDs for all mounted btrfs filesystems.  Unfortunately,
+    btrfs filesystems may be identified by three IDs: (1) the UUID of the first
+    device, (2) the path to the first device, (3) the mount point.  All three
+    IDs are used in the btrfs userland tools in a … well … chaotic way.
+
+    This function makes translation possible by returning all IDs in triplets.
+
+    :returns:
+      triplets of the form (UUID, device path, mount point) for all mounted
+      btrfs filesystems
+
+    :rtype: set[tuple[str]]
+    """
+    filesystems = get_filesystems()
+    mounts = [line.split()[:4] for line in open("/proc/mounts").readlines()]
+    root_mounts = {}
+    for mount in mounts:
+        if mount[2] == "btrfs":
+            options = mount[3].split(",")
+            if "subvol=/" in options:
+                root_mounts[mount[0]] = mount[1]
+    filesystem_ids = set()
+    for uuid, data in filesystems.items():
+        devices = data["devices"]
+        device_path = devices["1"]["path"]
+        try:
+            filesystem_ids.add((uuid, device_path, root_mounts[device_path]))
+        except KeyError:
+            raise RuntimeError(f"File system {uuid} is nowhere mounted with subvol=/")
+    return filesystem_ids
+
+
 def get_errors(filesystems):
     """Returns filesystem errors detected by “btrfs device stats”.  This call is
     rather fast (< one second).
@@ -70,75 +103,117 @@ def get_errors(filesystems):
 
     :returns:
       The device status as a dictionary mapping the device path
-      (e.g. “/dev/sda” to the number of recorded errors.
+      (e.g. “/dev/sda”) to the number of recorded errors.
 
     :rtype: dict[str, int]
     """
     devices = {}
     for data in filesystems.values():
         for device in data["devices"].values():
-            path = device["path"]
-            for line in subprocess.run(["btrfs", "device", "stats", path], check=True, capture_output=True,
+            device_path = device["path"]
+            for line in subprocess.run(["btrfs", "device", "stats", device_path], check=True, capture_output=True,
                                        text=True).stdout.splitlines():
                 match = re.match(r"\[(?P<device>.+)\]\..+_errs\s+(?P<errors>\d+)", line)
-                devices[path] = devices.get(path, 0) + int(match.group("errors"))
+                devices[device_path] = devices.get(device_path, 0) + int(match.group("errors"))
     return devices
 
 
-ongoing_scrubs = set()
+def read_scrub_status():
+    """Read all scrub status files under ``/var/lib/btrfs``.
 
-def cancel_ongoing_scrubs():
-    while ongoing_scrubs:
-        path = ongoing_scrubs.pop()
-        logging.info(f"Cancel scrub on {path} …")
-        subprocess.run(["btrfs", "scrub", "cancel", path], check=True, stdout=subprocess.DEVNULL)
-        logging.info(f"canceled")
+    :return:
+      The status of all ongoing, cancelled, or finished scrubs as a dictionary
+      mapping UUID to a dictionary mapping the device ID to a dictionary
+      mapping field names to values.  Impotant field names are “finished”,
+      “canceled”, or “total_errors”.  The latter is the only integer value.
 
-def get_scrub_results(filesystems):
+    :rtype: dict[str, dict[str, dict[str, (str or int)]]]
+    """
+    results = {}
+    for path in Path("/var/lib/btrfs").glob("scrub.status.*"):
+        if not re.match(r"scrub\.status\.[-0-9a-f]{36}$", path.name):
+            # Do not read "…_tmp" files.
+            continue
+        with open(path) as status_file:
+            status_lines = status_file.readlines()[1:]
+        for device in status_lines:
+            device = device.rstrip()
+            items = device.split("|")
+            uuid, colon, devid = items[0].partition(":")
+            assert colon
+            results.setdefault(uuid, {})[devid] = device_data = {}
+            for item in items[1:]:
+                key, colon, value = item.partition(":")
+                assert colon, item
+                device_data[key] = value
+            total_errors = 0
+            for key in ("read_errors", "csum_errors", "verify_errors", "csum_discards", "super_errors",
+                        "malloc_errors", "uncorrectable_errors", "corrected_errors"):
+                total_errors += int(device_data[key])
+            device_data["total_errors"] = total_errors
+    return results
+
+
+class ScrubCanceled(RuntimeError):
+    pass
+
+def scrub(uuids):
     """Returns filesystem errors detected by “btrfs scrub start”.  This call is
     expensive (scrubbing of all devices).
 
-    :param filesystems: the filesystems to be checked, as returned by
-      `get_filesystems`.
+    :param set[str] uuids: the uuids of the filesystems to be checked; they
+      must be mounted
 
-    :type filesystems: dict[str, dict[str, object]]
+    :returns: The device status as a dictionary mapping the UUID of the
+      filesystem to a dictionary mapping the device IDs (numbers starting at 1)
+      to dictionaries mapping field names to values.  The most important field
+      name is „total_errors“ (calculated by this routine rather than coming
+      from btrfs directly) which maps to an integer.
 
-    :returns:
-      The device status as a dictionary mapping the device path
-      (e.g. “/dev/sda”) to a dictionary mapping field names to values.  In case
-      of errors, the full scrub error message is returned in the single field
-      “error_message”.
-
-    :rtype: dict[str, dict[str, str]]
+    :rtype: dict[str, dict[str, dict[str, (str or int)]]]
     """
-    devices = {}
-    for uuid, data in filesystems.items():
-        for device in data["devices"].values():
-            path = device["path"]
-            logging.debug("Launch scrub process")
-            btrfs_process = subprocess.Popen(["btrfs", "scrub", "start", "-B", path], stdout=subprocess.PIPE, text=True)
-            ongoing_scrubs.add(path)
-            logging.debug("Waiting for scrub process to finish …")
-            output = btrfs_process.communicate()[0]
-            if path not in ongoing_scrubs:
-                # scrub was canceled
-                continue
-            logging.debug("… scrub process finished")
-            assert btrfs_process.returncode == 0, btrfs_process.returncode
-            match = re.match(r"""scrub done for (?P<uuid>.+)
-Scrub started:\s* (?P<timestamp>.+)
-Status:\s* finished
-Duration:\s* (?P<duration>.+)
-Total to scrub:\s* (?P<total_to_scrub>.+)
-Rate:\s* (?P<rate>.+)
-Error summary:\s* no errors found
-$""", output, re.MULTILINE)
-            if match:
-                assert match.group("uuid") == uuid
-                devices[path] = {"timestamp": match.group("timestamp"),
-                                 "duration": match.group("duration"),
-                                 "total_to_scrub": match.group("total_to_scrub"),
-                                 "rate": match.group("rate")}
-            else:
-                devices[path] = {"error_message": output}
-    return devices
+    cancel_scrubs(uuids)
+    try:
+        for mount_point in (ids[2] for ids in mounted_filesystem_ids() if ids[0] in uuids):
+            logging.debug(f"Launch scrub process for {mount_point}")
+            subprocess.run(["btrfs", "scrub", "start", mount_point], check=True, stdout=subprocess.DEVNULL)
+        while True:
+            time.sleep(5)
+            results = read_scrub_status()
+            unfinished_scrub = False
+            for uuid, devices in results.items():
+                if uuid in uuids:
+                    for device in devices.values():
+                        if device["finished"] != "1":
+                            unfinished_scrub = True
+                        if device["canceled"] == "1":
+                            raise ScrubCanceled
+            if not unfinished_scrub:
+                return results
+    except BaseException:
+        cancel_scrubs(uuids)
+        raise
+
+
+def cancel_scrubs(uuids):
+    """Cancel the scrubs to the given btrfs filesystems.  If no scrub is ongoing
+    for some or all of them, this is ignored.
+
+    :param set[str] uuids: the uuids of the filesystems the scrubs of which
+      should be cancelled; they must be mounted
+    """
+    for mount_point in (ids[2] for ids in mounted_filesystem_ids() if ids[0] in uuids):
+        logging.debug(f"Cancel scrub for {mount_point}")
+        process = subprocess.run(["btrfs", "scrub", "cancel", mount_point])
+        assert process.returncode in [0, 2], process.returncode
+    time.sleep(1)
+    status = read_scrub_status()
+    uncanceled_scrub = True
+    while uncanceled_scrub:
+        uncanceled_scrub = False
+        for uuid, devices in status.items():
+            if uuid in uuids:
+                for device in devices.values():
+                    if device["canceled"] != "1":
+                        uncanceled_scrub = True
+        time.sleep(5)
