@@ -202,18 +202,19 @@ def cancel_scrubs(uuids):
     :param set[str] uuids: the uuids of the filesystems the scrubs of which
       should be cancelled; they must be mounted
     """
-    for mount_point in (ids[2] for ids in mounted_filesystem_ids() if ids[0] in uuids):
-        logging.debug(f"Cancel scrub for {mount_point}")
-        process = subprocess.run(["btrfs", "scrub", "cancel", mount_point],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        assert process.returncode in [0, 2], process.returncode
-    uncanceled_scrub = True
-    while uncanceled_scrub:
-        time.sleep(1)
-        uncanceled_scrub = False
+    while True:
+        uncanceled_scrubs = set()
         status = read_scrub_status()
         for uuid, devices in status.items():
             if uuid in uuids:
                 for device in devices.values():
                     if device["canceled"] != "1":
-                        uncanceled_scrub = True
+                        uncanceled_scrubs.add(uuid)
+        if not uncanceled_scrubs:
+            break
+        for mount_point in (ids[2] for ids in mounted_filesystem_ids() if ids[0] in uncanceled_scrubs):
+            logging.debug(f"Cancel scrub for {mount_point}")
+            process = subprocess.run(["btrfs", "scrub", "cancel", mount_point],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            assert process.returncode in [0, 2], process.returncode
+        time.sleep(1)
