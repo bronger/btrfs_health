@@ -207,10 +207,10 @@ def cancel_scrubs(uuids):
         process = subprocess.run(["btrfs", "scrub", "cancel", mount_point])
         assert process.returncode in [0, 2], process.returncode
     time.sleep(1)
-    status = read_scrub_status()
     uncanceled_scrub = True
     while uncanceled_scrub:
         uncanceled_scrub = False
+        status = read_scrub_status()
         for uuid, devices in status.items():
             if uuid in uuids:
                 for device in devices.values():
