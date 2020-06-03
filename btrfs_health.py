@@ -179,6 +179,9 @@ def scrub(uuids):
             subprocess.run(["btrfs", "scrub", "start", mount_point], check=True, stdout=subprocess.DEVNULL)
         while True:
             time.sleep(5)
+            if scrub.cancel:
+                scrub.cancel_scrubs = False
+                raise ScrubCanceled
             results = read_scrub_status()
             unfinished_scrub = False
             for uuid, devices in results.items():
@@ -186,13 +189,13 @@ def scrub(uuids):
                     for device in devices.values():
                         if device["finished"] != "1":
                             unfinished_scrub = True
-                        if device["canceled"] == "1":
-                            raise ScrubCanceled
+                        assert device["canceled"] != "1"
             if not unfinished_scrub:
                 return results
     except BaseException:
         cancel_scrubs(uuids)
         raise
+scrub.cancel = False
 
 
 def cancel_scrubs(uuids):
