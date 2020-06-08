@@ -42,6 +42,8 @@ def get_filesystems():
         devices = {}
 
         while line := next(lines):
+            if "*** Some devices missing" in line:
+                continue
             match = re.match("\tdevid\\s* (?P<devid>\\d+) size (?P<size>.+) used (?P<used>.+) path (?P<device_path>.*)", line)
             devices[match.group("devid")] = {"size": match.group("size"), "used": match.group("used"),
                                              "path": match.group("device_path")}
