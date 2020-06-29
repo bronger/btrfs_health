@@ -182,7 +182,7 @@ def scrub(uuids):
         while True:
             time.sleep(5)
             if scrub.cancel:
-                scrub.cancel_scrubs = False
+                scrub.cancel = False
                 raise ScrubCanceled
             results = read_scrub_status()
             unfinished_scrub = False
