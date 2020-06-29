@@ -214,7 +214,7 @@ def cancel_scrubs(uuids):
         for uuid, devices in status.items():
             if uuid in uuids:
                 for device in devices.values():
-                    if device["canceled"] != "1":
+                    if device["canceled"] != "1" and device["finished"] != "1":
                         uncanceled_scrubs.add(uuid)
         if not uncanceled_scrubs:
             break
