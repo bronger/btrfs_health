@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 """Helper routines for converting btrfs’ output into something processable.  In
 particular, it fullfills the need to decide whethr a btrfs filesystem is
 healthy or not.  Unfortunately, btrfs’ userland utilities produce output that
