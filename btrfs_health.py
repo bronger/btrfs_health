@@ -5,7 +5,7 @@ is unstable in ordering, unstable in device naming, complex to parse, and not
 accompanied by proper exit codes.
 """
 
-import re, subprocess, logging, time
+import re, subprocess, logging, time, json
 from pathlib import Path
 
 
@@ -74,19 +74,15 @@ def mounted_filesystem_ids():
     :rtype: set[tuple[str]]
     """
     filesystems = get_filesystems()
-    mounts = [line.split()[:4] for line in open("/proc/mounts").readlines()]
-    root_mounts = {}
-    for mount in mounts:
-        if mount[2] == "btrfs":
-            options = mount[3].split(",")
-            if "subvol=/" in options:
-                root_mounts[mount[0]] = mount[1]
+    mounts = {device["path"]: device["mountpoint"]
+              for device in json.loads(subprocess.run(["lsblk", "--json", "--output", "PATH,MOUNTPOINT"],
+                                                      check=True, text=True, capture_output=True).stdout)["blockdevices"]}
     filesystem_ids = set()
     for uuid, data in filesystems.items():
         devices = data["devices"]
         device_path = devices["1"]["path"]
         try:
-            filesystem_ids.add((uuid, device_path, root_mounts[device_path]))
+            filesystem_ids.add((uuid, device_path, mounts[device_path]))
         except KeyError:
             raise RuntimeError(f"File system {uuid} is nowhere mounted with subvol=/")
     return filesystem_ids
