@@ -80,7 +80,7 @@ def mounted_filesystem_ids():
     filesystem_ids = set()
     for uuid, data in filesystems.items():
         devices = data["devices"]
-        device_path = devices["1"]["path"]
+        device_path = devices[sorted(devices, key=int)[0]]["path"]
         try:
             filesystem_ids.add((uuid, device_path, mounts[device_path]))
         except KeyError:
