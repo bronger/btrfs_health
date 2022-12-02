@@ -143,7 +143,7 @@ def read_scrub_status():
                 assert colon, item
                 device_data[key] = value
             total_errors = 0
-            for key in ("read_errors", "csum_errors", "verify_errors", "csum_discards", "super_errors",
+            for key in ("read_errors", "csum_errors", "verify_errors", "super_errors",
                         "malloc_errors", "uncorrectable_errors", "corrected_errors"):
                 total_errors += int(device_data[key])
             device_data["total_errors"] = total_errors
