@@ -13,7 +13,7 @@ def get_filesystems():
     """Returns the mounted btrfs filesystems.
 
     TODO(bronger): A bug is that the current btrfs (Debian Trixie) does not end
-    with an empty line, which causes a premature STopIteration so that the last
+    with an empty line, which causes a premature StopIteration so that the last
     filesystem is not included into the return value.
 
     :returns:
