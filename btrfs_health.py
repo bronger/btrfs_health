@@ -92,12 +92,14 @@ def mounted_filesystem_ids():
     return filesystem_ids
 
 
-def get_errors(filesystems):
+def get_errors(filesystems, reset=False):
     """Returns filesystem errors detected by “btrfs device stats”.  This call is
     rather fast (< one second).
 
     :param filesystems: the filesystems to be checked, as returned by
       `get_filesystems`.
+    :param bool reset: whether the numbers should be reset to zero after
+      reporting.
 
     :type filesystems: dict[str, dict[str, object]]
 
@@ -111,8 +113,9 @@ def get_errors(filesystems):
     for data in filesystems.values():
         for device in data["devices"].values():
             device_path = device["path"]
-            for line in subprocess.run(["btrfs", "device", "stats", device_path], check=True, capture_output=True,
-                                       text=True).stdout.splitlines():
+            reset_argument = ["--reset"] if reset else []
+            for line in subprocess.run(["btrfs", "device", "stats"] + reset_argument + [device_path],
+                                       check=True, capture_output=True, text=True).stdout.splitlines():
                 match = re.match(r"\[(?P<device>.+)\]\..+_errs\s+(?P<errors>\d+)", line)
                 devices[device_path] = devices.get(device_path, 0) + int(match.group("errors"))
     return devices
