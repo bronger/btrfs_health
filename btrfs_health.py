@@ -12,10 +12,6 @@ from pathlib import Path
 def get_filesystems():
     """Returns the mounted btrfs filesystems.
 
-    TODO(bronger): A bug is that the current btrfs (Debian Trixie) does not end
-    with an empty line, which causes a premature StopIteration so that the last
-    filesystem is not included into the return value.
-
     :returns:
       All mounted btrfs filesystems, as a dictionary mapping the UUID to
       filesystem data.  The filesystem data is a dictionary mapping field names
@@ -29,7 +25,7 @@ def get_filesystems():
     """
     btrfs = subprocess.run(["btrfs", "fi", "show", "--mounted"], check=True, capture_output=True, text=True)
     assert not btrfs.stderr, btrfs.stderr
-    lines = iter(btrfs.stdout.splitlines())
+    lines = iter(btrfs.stdout.splitlines() + [""])
 
     def parse_filesystem(lines):
         data = {}
