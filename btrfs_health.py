@@ -85,6 +85,7 @@ def mounted_filesystem_ids():
         if filesystem == "btrfs" and "subvol=/" in options:
             mounts[device_path] = mountpoint
             filesystem_ids = set()
+    logging.debug(f"Found Btrfs root mounts: {mounts}")
     for uuid, data in filesystems.items():
         devices = data["devices"]
         device_path = devices[sorted(devices, key=int)[0]]["path"]
