@@ -78,10 +78,13 @@ def mounted_filesystem_ids():
     :rtype: set[tuple[str]]
     """
     filesystems = get_filesystems()
-    mounts = {device["path"]: device["mountpoint"]
-              for device in json.loads(subprocess.run(["lsblk", "--json", "--output", "PATH,MOUNTPOINT"],
-                                                      check=True, text=True, capture_output=True).stdout)["blockdevices"]}
-    filesystem_ids = set()
+    mounts = {}
+    for line in open("/proc/mounts"):
+        device_path, mountpoint, filesystem, options, _, _ = line.split()
+        options = options.split(",")
+        if filesystem == "btrfs" and "subvol=/" in options:
+            mounts[device_path] = mountpoint
+            filesystem_ids = set()
     for uuid, data in filesystems.items():
         devices = data["devices"]
         device_path = devices[sorted(devices, key=int)[0]]["path"]
